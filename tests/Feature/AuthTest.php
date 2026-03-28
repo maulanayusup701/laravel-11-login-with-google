@@ -21,6 +21,7 @@ class AuthTest extends TestCase
 
     public function test_successful_login(): void
     {
+        /** @var \App\Models\User $user */
         $user = User::factory()->create([
             'email' => 'test@example.com',
             'password' => Hash::make('password123'),
@@ -38,7 +39,8 @@ class AuthTest extends TestCase
 
     public function test_login_fails_with_invalid_credentials(): void
     {
-        User::factory()->create([
+        /** @var \App\Models\User $user */
+        $user = User::factory()->create([
             'email' => 'test@example.com',
             'password' => Hash::make('password123'),
         ]);
@@ -75,6 +77,7 @@ class AuthTest extends TestCase
 
     public function test_logout(): void
     {
+        /** @var \App\Models\User $user */
         $user = User::factory()->create();
 
         $response = $this->actingAs($user)->post('/logout');
@@ -92,6 +95,7 @@ class AuthTest extends TestCase
 
     public function test_home_page_accessible_when_authenticated(): void
     {
+        /** @var \App\Models\User $user */
         $user = User::factory()->create([
             'email_verified_at' => now(),
         ]);
@@ -104,6 +108,7 @@ class AuthTest extends TestCase
 
     public function test_authenticated_user_cannot_access_login_page(): void
     {
+        /** @var \App\Models\User $user */
         $user = User::factory()->create([
             'email_verified_at' => now(),
         ]);

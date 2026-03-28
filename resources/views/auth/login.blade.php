@@ -8,6 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <style>
         * {
             font-family: 'Inter', sans-serif;
@@ -153,6 +154,9 @@
                         </div>
                     </div>
 
+                    <!-- Google One Tap Container (hidden) -->
+                    <div id="g_id_onload" class="hidden"></div>
+
                     <!-- Google Login (Socialite) -->
                     <a href="{{ route('auth.google') }}" id="googleLogin"
                         class="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-[#e8e8e0] rounded-lg hover:bg-[#fafaf7] transition-all duration-200">
@@ -192,6 +196,134 @@
             btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Memproses...';
             btn.disabled = true;
         });
+
+        // Google One Tap Callback
+        function handleCredentialResponse(response) {
+            // console.log('One Tap response received:', response);
+
+            // Get fresh CSRF token
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+            // Send the credential to your server
+            fetch('{{ route('auth.google.callback.post') }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        credential: response.credential
+                    }),
+                    credentials: 'same-origin'
+                })
+                .then(response => {
+                    // console.log('Response status:', response.status);
+                    // console.log('Response headers:', response.headers);
+
+                    // If response is a redirect (status 301, 302, 303, 307, 308), follow it
+                    if (response.redirected) {
+                        window.location.href = response.url;
+                        return;
+                    }
+
+                    if (!response.ok) {
+                        throw new Error('HTTP error! status: ' + response.status);
+                    }
+
+                    // Check if response is JSON
+                    const contentType = response.headers.get('content-type');
+                    if (!contentType || !contentType.includes('application/json')) {
+                        // If not JSON, it might be a redirect response, try to follow it
+                        if (response.url && response.url !== window.location.href) {
+                            window.location.href = response.url;
+                            return;
+                        }
+                        throw new Error('Response is not JSON: ' + contentType);
+                    }
+
+                    return response.json();
+                })
+                .then(data => {
+                    if (data) {
+                        // console.log('Response data:', data);
+
+                        if (data.success) {
+                            window.location.href = data.redirect || '{{ route('home') }}';
+                        } else {
+                            alert(data.message || 'Login failed');
+                            // Fallback to regular Google login
+                            window.location.href = '{{ route('auth.google') }}';
+                        }
+                    }
+                })
+                .catch(error => {
+                    // console.error('Error:', error);
+                    // alert('Login failed: ' + error.message);
+                    // Fallback to regular Google login
+                    window.location.href = '{{ route('auth.google') }}';
+                });
+        }
+
+        // Load Google Identity Services with proper initialization
+        (function() {
+            // Check if Google script is already loaded
+            if (window.google && window.google.accounts) {
+                initializeGoogleAuth();
+            } else {
+                const script = document.createElement('script');
+                script.src = 'https://accounts.google.com/gsi/client';
+                script.async = true;
+                script.defer = true;
+                script.onload = initializeGoogleAuth;
+                document.head.appendChild(script);
+            }
+        })();
+
+        function initializeGoogleAuth() {
+            const clientId = '{{ config('services.google.client_id') }}';
+            // console.log('Google Client ID:', clientId);
+
+            if (!clientId) {
+                // console.error('Google Client ID is empty');
+                return;
+            }
+
+            try {
+                // Initialize Google Identity Services
+                window.google.accounts.id.initialize({
+                    client_id: clientId,
+                    callback: handleCredentialResponse,
+                    auto_select: false,
+                    cancel_on_tap_outside: true,
+                    context: 'signin'
+                });
+
+                // Try to prompt One Tap with error handling
+                setTimeout(() => {
+                    try {
+                        window.google.accounts.id.prompt((notification) => {
+                            if (notification.isNotDisplayed()) {
+                                // console.log('One Tap not displayed:', notification.getNotDisplayedReason());
+                                // One Tap tidak ditampilkan, tidak masalah
+                            } else if (notification.isSkippedMoment()) {
+                                // console.log('One Tap skipped:', notification.getSkippedReason());
+                                // One Tap dilewati, tidak masalah
+                            } else if (notification.isDismissedMoment()) {
+                                // console.log('One Tap dismissed:', notification.getDismissedReason());
+                                // One Tap ditutup, tidak masalah
+                            }
+                        });
+                    } catch (error) {
+                        // console.warn('One Tap prompt failed (this is normal):', error.message);
+                        // Error ini normal terjadi, jangan hentikan eksekusi
+                    }
+                }, 1000); // Tunggu 1 detik sebelum mencoba prompt
+
+            } catch (error) {
+                // console.error('Google Auth initialization error:', error);
+            }
+        }
     </script>
 </body>
 

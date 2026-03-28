@@ -18,6 +18,7 @@ class VerificationTest extends TestCase
      */
     public function test_verification_notice_page_loads_for_unverified_user(): void
     {
+        /** @var \App\Models\User $user */
         $user = User::factory()->create([
             'email_verified_at' => null,
         ]);
@@ -33,6 +34,7 @@ class VerificationTest extends TestCase
      */
     public function test_verification_notice_page_redirects_for_verified_user(): void
     {
+        /** @var \App\Models\User $user */
         $user = User::factory()->create([
             'email_verified_at' => now(),
         ]);
@@ -47,6 +49,7 @@ class VerificationTest extends TestCase
      */
     public function test_email_verification_with_valid_hash(): void
     {
+        /** @var \App\Models\User $user */
         $user = User::factory()->create([
             'email_verified_at' => null,
         ]);
@@ -65,6 +68,7 @@ class VerificationTest extends TestCase
      */
     public function test_email_verification_with_invalid_hash(): void
     {
+        /** @var \App\Models\User $user */
         $user = User::factory()->create([
             'email_verified_at' => null,
         ]);
@@ -91,6 +95,7 @@ class VerificationTest extends TestCase
      */
     public function test_email_verification_already_verified(): void
     {
+        /** @var \App\Models\User $user */
         $user = User::factory()->create([
             'email_verified_at' => now(),
         ]);
@@ -109,6 +114,7 @@ class VerificationTest extends TestCase
     {
         Notification::fake();
 
+        /** @var \App\Models\User $user */
         $user = User::factory()->create([
             'email_verified_at' => null,
         ]);
@@ -129,6 +135,7 @@ class VerificationTest extends TestCase
      */
     public function test_resend_verification_email_for_verified_user(): void
     {
+        /** @var \App\Models\User $user */
         $user = User::factory()->create([
             'email_verified_at' => now(),
         ]);

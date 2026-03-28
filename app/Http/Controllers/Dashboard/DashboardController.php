@@ -8,13 +8,15 @@ use Illuminate\Support\Facades\Auth;
 
 class DashboardController extends Controller
 {
-    public function index()
+    public function home()
     {
         if (!Auth::check()) {
             return redirect()->route('login');
         }
 
-        if (!Auth::user()->hasVerifiedEmail()) {
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+        if (!$user->hasVerifiedEmail()) {
             return redirect()->route('verification.notice');
         }
 

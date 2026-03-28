@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
 use Illuminate\Support\Facades\Log;
+use Google_Client;
 
 class AuthController extends Controller
 {
@@ -38,7 +39,9 @@ class AuthController extends Controller
             $request->session()->regenerate();
 
             // Check if email is verified
-            if (!Auth::user()->hasVerifiedEmail()) {
+            /** @var User $user */
+            $user = Auth::user();
+            if (!$user->hasVerifiedEmail()) {
                 return redirect()->route('verification.notice');
             }
 
@@ -60,7 +63,7 @@ class AuthController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect('/');
+        return redirect()->route('login');
     }
 
     /**
@@ -74,57 +77,124 @@ class AuthController extends Controller
     /**
      * Handle Google OAuth callback
      */
-    public function handleGoogleCallback()
+    public function handleGoogleCallback(Request $request)
     {
         try {
-            $googleUser = Socialite::driver('google')->user();
-
-            if (!$googleUser->getEmail()) {
-                throw new \Exception('Email tidak tersedia dari akun Google.');
+            return $request->has('credential')
+                ? $this->handleOneTapCallback($request)
+                : $this->handleLaravelSosialite();
+        } catch (\Exception $e) {
+            if ($request->has('credential')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Login gagal. Silakan coba lagi.'
+                ], 500);
             }
+            Log::error('Google OAuth Error: ' . $e->getMessage());
+            return redirect('/login')->with('error', 'Login with Google failed. Please try again.');
+        }
+    }
 
-            $user = User::where('email', $googleUser->getEmail())->first();
+    /**
+     * Handle laravel sosialite
+     */
+    protected function handleLaravelSosialite()
+    {
+        $googleUser = Socialite::driver('google')->user();
 
-            if (!$user) {
-                // Create new user
-                $user = User::create([
-                    'name' => $googleUser->getName(),
-                    'email' => $googleUser->getEmail(),
-                    'provider' => 'google',
-                    'provider_id' => $googleUser->getId(),
-                    'email_verified_at' => null,
-                    'password' => Hash::make(Str::random(24)),
-                ]);
+        if (!$googleUser->getEmail()) {
+            throw new \Exception('Email tidak tersedia dari akun Google.');
+        }
 
-                // Send verification email
-                $user->sendEmailVerificationNotification();
+        $user = User::where('email', $googleUser->getEmail())->first();
 
-                Auth::login($user);
+        if (!$user) {
+            // Create new user
+            $user = User::create([
+                'name' => $googleUser->getName(),
+                'email' => $googleUser->getEmail(),
+                'provider' => 'google',
+                'provider_id' => $googleUser->getId(),
+                'email_verified_at' => null,
+                'password' => Hash::make(Str::random(24)),
+            ]);
 
-                return redirect()->route('verification.notice')
-                    ->with('success', 'Silakan verifikasi email Anda terlebih dahulu.');
-            }
-
-            // Update provider info if needed
-            if ($user->provider !== 'google' || $user->provider_id !== $googleUser->getId()) {
-                $user->update([
-                    'provider' => 'google',
-                    'provider_id' => $googleUser->getId(),
-                ]);
-            }
+            // Send verification email
+            $user->sendEmailVerificationNotification();
 
             Auth::login($user);
 
-            // Cek apakah email sudah diverifikasi
-            if (!$user->hasVerifiedEmail()) {
-                return redirect()->route('verification.notice');
-            }
-
-            return redirect()->intended('home');
-        } catch (\Exception $e) {
-            Log::error('Google OAuth Error: ' . $e->getMessage());
-
-            return redirect('/login')->with('error', 'Login with Google failed. Please try again.');
+            return redirect()->route('verification.notice')
+                ->with('success', 'Silakan verifikasi email Anda terlebih dahulu.');
         }
+
+        // Update provider info if needed
+        if ($user->provider !== 'google' || $user->provider_id !== $googleUser->getId()) {
+            $user->update([
+                'provider' => 'google',
+                'provider_id' => $googleUser->getId(),
+            ]);
+        }
+
+        Auth::login($user);
+
+        // Cek apakah email sudah diverifikasi
+        if (!$user->hasVerifiedEmail()) {
+            return redirect()->route('verification.notice');
+        }
+
+        return redirect()->intended('home');
+    }
+
+    /**
+     * Handle One Tap callback
+     */
+    protected function handleOneTapCallback(Request $request)
+    {
+        $credential = $request->input('credential');
+
+        // Verify the credential
+        $client = new Google_Client([
+            'client_id' => config('services.google.client_id'),
+        ]);
+
+        $payload = $client->verifyIdToken($credential);
+
+        if (!$payload) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Credential tidak valid'
+            ], 400);
+        }
+
+        // Cari atau buat user
+        $user = User::firstOrCreate(
+            ['email' => $payload['email']],
+            [
+                'name' => $payload['name'],
+                'provider' => 'google',
+                'provider_id' => $payload['sub'],
+                'email_verified_at' => null,
+                'password' => Hash::make(Str::random(24)),
+            ]
+        );
+
+        // Jika user baru dibuat, kirim email verifikasi
+        if ($user->wasRecentlyCreated) {
+            $user->sendEmailVerificationNotification();
+        }
+
+        Auth::login($user);
+
+        // Cek apakah email sudah diverifikasi
+        if (!$user->hasVerifiedEmail()) {
+            return redirect()->route('verification.notice');
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Login berhasil',
+            'redirect' => route('home')
+        ]);
     }
 }
